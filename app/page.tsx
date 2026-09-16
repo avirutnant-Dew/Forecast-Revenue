@@ -238,7 +238,7 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
 // Google Apps Script Web App URL
-  const DEFAULT_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzXvFoSmM7XL8Y3_pmxiVO-BONfrFT_heKW2h3MN2ABmjpBuBqhIkIJiOIv7Q9fiDsY/exec';
+  const DEFAULT_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz1p27jyR-G0vsHYwpulF52BDVfr7730AqBa2Lrt3WNwHEQoExnutykpAeQ9eaY38Ud/exec';
   const [scriptUrl, setScriptUrl] = useState(DEFAULT_SCRIPT_URL);
   const [urlInputValue, setUrlInputValue] = useState(DEFAULT_SCRIPT_URL);
 
