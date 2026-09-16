@@ -1,13 +1,13 @@
 /**
  * RevPlanner 2027 Google Apps Script API
- * Run setupInitialSheets() once, then enter actual YTD values in Historical_Actual_8M.
+ * Run setupInitialSheets() once, then enter actual YTD values in Historical_Actual_YTD.
  */
 
 const SHEET_NAMES = {
   scenarios: 'Config_Scenarios',
   sbus: 'SBU_Baseline_Factors',
   monthly: 'Monthly_Seasonality_2026',
-  historical: 'Historical_Actual_8M',
+  historical: 'Historical_Actual_YTD',
   log: 'Saved_Scenarios_Log'
 };
 
@@ -16,7 +16,7 @@ function doGet() {
   const scenarios = readScenarios_(ss.getSheetByName(SHEET_NAMES.scenarios));
   const sbus = readSbus_(ss.getSheetByName(SHEET_NAMES.sbus));
   const monthlySeasonality = readMonthly_(ss.getSheetByName(SHEET_NAMES.monthly));
-  const historicalActual8M = readHistorical_(ss.getSheetByName(SHEET_NAMES.historical));
+  const historicalYTD = readHistorical_(ss.getSheetByName(SHEET_NAMES.historical));
 
   return json_({
     status: 'success',
@@ -24,7 +24,8 @@ function doGet() {
     scenarios,
     sbus,
     monthlySeasonality,
-    historicalActual8M
+    historicalYTD,
+    historicalActual8M: historicalYTD
   });
 }
 
@@ -61,7 +62,7 @@ function setupInitialSheets() {
 
   const defaultSheet = ss.getSheetByName('Sheet1');
   if (defaultSheet && ss.getSheets().length > 1) ss.deleteSheet(defaultSheet);
-  SpreadsheetApp.getUi().alert('Setup เรียบร้อย: สร้าง/ปรับปรุง 5 แท็บแล้ว กรุณากรอกข้อมูลใน Historical_Actual_8M');
+  SpreadsheetApp.getUi().alert('Setup เรียบร้อย: สร้าง/ปรับปรุง 5 แท็บแล้ว กรุณากรอกข้อมูลใน Historical_Actual_YTD โดยระบุ As_Of_Month ให้ตรงกับข้อมูลจริง');
 }
 
 function setupScenarios_(ss) {
@@ -115,7 +116,7 @@ function setupMonthly_(ss) {
 
 function setupHistorical_(ss) {
   const rows = [[
-    'SBU_ID', 'SBU_Name', 'Year', 'Months', 'Total_Revenue_8M_THB', 'OPD_Revenue_8M_THB', 'IPD_Revenue_8M_THB',
+    'SBU_ID', 'SBU_Name', 'Year', 'As_Of_Month', 'Total_Revenue_YTD_THB', 'OPD_Revenue_YTD_THB', 'IPD_Revenue_YTD_THB',
     'OPD_Visit_Per_Day', 'OPD_Rev_Per_Charge_Visit', 'Admission_Per_Day', 'ALOS', 'IPD_Rev_Per_Patient_Day', 'Updated_At'
   ]];
   const sbus = ['PED', 'MED', 'OTHER', 'OBGYN', 'ORTHO', 'TRAUMA', 'SURG', 'GI', 'CATHLAB', 'CHECKUP', 'REHAB'];
@@ -132,6 +133,7 @@ function setupHistorical_(ss) {
   sheet.getRange(2, 13, rows.length - 1, 1).setNumberFormat('yyyy-mm-dd hh:mm');
   sheet.getRange(2, 3, rows.length - 1, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireNumberBetween(2000, 2100).setAllowInvalid(false).build());
   sheet.getRange(2, 4, rows.length - 1, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireNumberBetween(1, 12).setAllowInvalid(false).build());
+  sheet.getRange(2, 4, rows.length - 1, 1).setNote('ใส่เดือนล่าสุดของข้อมูล YTD เช่น 8, 9 หรือ 10; ต้องใช้ค่าเดียวกันทุก SBU');
 }
 
 function setupLog_(ss) {
@@ -158,7 +160,15 @@ function readMonthly_(sheet) {
 }
 function readHistorical_(sheet) {
   if (!sheet) return [];
-  return sheet.getDataRange().getValues().slice(1).filter(r => r[0] && finiteNumber_(r[4]) > 0).map(r => { const months = Math.max(1, Math.min(12, finiteNumber_(r[3]) || 8)); return { sbuId: String(r[0]), sbuName: r[1], year: finiteNumber_(r[2]), months, totalRevenue8M: finiteNumber_(r[4]), opdRevenue8M: finiteNumber_(r[5]), ipdRevenue8M: finiteNumber_(r[6]), opdVisitsPerDay: finiteNumber_(r[7]), opdRevenuePerVisit: finiteNumber_(r[8]), admissionsPerDay: finiteNumber_(r[9]), alos: finiteNumber_(r[10]), ipdRevenuePerPatientDay: finiteNumber_(r[11]), updatedAt: r[12], annualizedTotalRevenue: finiteNumber_(r[4]) / months * 12, annualizedOpdRevenue: finiteNumber_(r[5]) / months * 12, annualizedIpdRevenue: finiteNumber_(r[6]) / months * 12 }; });
+  const rows = sheet.getDataRange().getValues().slice(1).filter(r => r[0] && finiteNumber_(r[4]) > 0);
+  const months = rows.length ? Math.max(1, Math.min(12, finiteNumber_(rows[0][3]) || 8)) : 0;
+  return rows.map(r => ({
+    sbuId: String(r[0]), sbuName: r[1], year: finiteNumber_(r[2]), months,
+    asOfMonth: months,
+    totalRevenueYTD: finiteNumber_(r[4]), opdRevenueYTD: finiteNumber_(r[5]), ipdRevenueYTD: finiteNumber_(r[6]),
+    opdVisitsPerDay: finiteNumber_(r[7]), opdRevenuePerVisit: finiteNumber_(r[8]), admissionsPerDay: finiteNumber_(r[9]), alos: finiteNumber_(r[10]), ipdRevenuePerPatientDay: finiteNumber_(r[11]), updatedAt: r[12],
+    annualizedTotalRevenue: finiteNumber_(r[4]) / months * 12, annualizedOpdRevenue: finiteNumber_(r[5]) / months * 12, annualizedIpdRevenue: finiteNumber_(r[6]) / months * 12
+  }));
 }
 function writeSheet_(ss, name, rows) { const sheet = ss.getSheetByName(name) || ss.insertSheet(name); sheet.clear(); sheet.getRange(1, 1, rows.length, rows[0].length).setValues(rows); formatHeaderRow_(sheet, rows[0].length); }
 function formatHeaderRow_(sheet, columns) { sheet.getRange(1, 1, 1, columns).setBackground('#1e293b').setFontColor('#ffffff').setFontWeight('bold').setHorizontalAlignment('center'); sheet.setFrozenRows(1); for (let c = 1; c <= columns; c++) sheet.autoResizeColumn(c); }

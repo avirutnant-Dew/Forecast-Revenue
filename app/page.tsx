@@ -252,7 +252,7 @@ export default function App() {
       targetTotal: s.defaultTarget2027
     }))
   );
-  const [historicalActual8M, setHistoricalActual8M] = useState([]);
+  const [historicalYTD, setHistoricalYTD] = useState([]);
 
   const [editingFactors, setEditingFactors] = useState(null);
   const [comparisonSbuId, setComparisonSbuId] = useState(null);
@@ -299,7 +299,7 @@ export default function App() {
         if (data.scenarios && data.scenarios.base) {
           setHospitalTarget(data.scenarios.base.target);
         }
-        setHistoricalActual8M(Array.isArray(data.historicalActual8M) ? data.historicalActual8M : []);
+        setHistoricalYTD(Array.isArray(data.historicalYTD) ? data.historicalYTD : []);
         setSyncStatus('success');
         setSyncMessage('เชื่อมต่อชีตสำเร็จ!');
         setTimeout(() => setSyncStatus(null), 3000);
@@ -503,14 +503,15 @@ export default function App() {
     };
   }, [sbuConfigs, hospitalTarget]);
 
+  const historicalMonths = historicalYTD[0]?.months || 0;
   const historicalBySbu = useMemo(() => {
-    const rows = Array.isArray(historicalActual8M) ? historicalActual8M : [];
+    const rows = Array.isArray(historicalYTD) ? historicalYTD : [];
     return rows.reduce((acc, row) => {
       const id = String(row.sbuId || row.SBU_ID || '').trim();
       if (id) acc[id] = row;
       return acc;
     }, {});
-  }, [historicalActual8M]);
+  }, [historicalYTD]);
 
   // ภาพรวมรายเดือน 12 เดือน
   const monthlyOverallData = useMemo(() => {
@@ -1159,7 +1160,7 @@ Math.abs(calculatedData.gap) < 200000
                       <Database className="w-4 h-4 text-emerald-600" />
                       Historical Benchmark: Actual YTD และ Annualized Floor ราย SBU
                     </h3>
-                    <p className="text-xs text-slate-400 mt-1">เป้าหมายปี 2027 ควรไม่ต่ำกว่า Run Rate จากข้อมูลจริงที่กรอกใน Historical_Actual_8M</p>
+                    <p className="text-xs text-slate-400 mt-1">เป้าหมายปี 2027 ควรไม่ต่ำกว่า Run Rate จากข้อมูลจริงที่กรอกใน Historical_Actual_YTD</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -1169,10 +1170,10 @@ Math.abs(calculatedData.gap) < 200000
                       <Eye className="w-3.5 h-3.5" />
                       ดู Factor Comparison
                     </button>
-                    <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-1 rounded">{historicalActual8M.length} SBU loaded</span>
+                    <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-1 rounded">{historicalYTD.length} SBU loaded</span>
                   </div>
                 </div>
-                {historicalActual8M.length === 0 ? (
+                {historicalYTD.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4 text-xs text-amber-800 flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 flex-shrink-0" /> ยังไม่มีข้อมูล Historical 8 เดือน กรุณากรอกข้อมูลใน Google Sheet แล้วกด Sync ใหม่
                   </div>
@@ -1180,17 +1181,17 @@ Math.abs(calculatedData.gap) < 200000
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[980px] text-xs font-sans">
                       <thead><tr className="text-left text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
-                        <th className="py-2 pr-3">SBU</th><th className="py-2 pr-3">Actual YTD</th><th className="py-2 pr-3">Annualized Floor</th><th className="py-2 pr-3">Target 2027</th><th className="py-2 pr-3">Gap vs Floor</th><th className="py-2 pr-3">Actual Factors ({'8M'})</th><th className="py-2">Status</th>
+                        <th className="py-2 pr-3">SBU</th><th className="py-2 pr-3">Actual YTD</th><th className="py-2 pr-3">Annualized Floor</th><th className="py-2 pr-3">Target 2027</th><th className="py-2 pr-3">Gap vs Floor</th><th className="py-2 pr-3">Actual Factors ({historicalMonths ? `M${historicalMonths}` : 'YTD'})</th><th className="py-2">Status</th>
                       </tr></thead>
                       <tbody>
                         {calculatedData.sbus.map((sbu) => {
                           const h = historicalBySbu[sbu.id];
-                          const floor = Number(h?.annualizedTotalRevenue || h?.totalRevenue8M ? (Number(h.totalRevenue8M) / Math.max(1, Number(h.months || 8)) * 12) : 0);
+                          const floor = Number(h?.annualizedTotalRevenue || h?.totalRevenueYTD ? (Number(h.totalRevenueYTD) / Math.max(1, Number(h.months || 8)) * 12) : 0);
                           const gap = sbu.targetTotal - floor;
                           const hasData = floor > 0;
                           return <tr key={sbu.id} className="border-b border-slate-50 last:border-0 align-top">
                             <td className="py-3 pr-3 font-bold text-slate-800">{sbu.name}</td>
-                            <td className="py-3 pr-3 text-slate-600">{hasData ? formatMillion(h.totalRevenue8M) : '—'}<span className="block text-[10px] text-slate-400">{hasData ? `${h.months || 8} เดือน` : 'ไม่มีข้อมูล'}</span></td>
+                            <td className="py-3 pr-3 text-slate-600">{hasData ? formatMillion(h.totalRevenueYTD) : '—'}<span className="block text-[10px] text-slate-400">{hasData ? `${h.months || 8} เดือน` : 'ไม่มีข้อมูล'}</span></td>
                             <td className="py-3 pr-3 font-bold text-emerald-700">{hasData ? formatMillion(floor) : '—'}</td>
                             <td className="py-3 pr-3 font-bold text-blue-700">{formatMillion(sbu.targetTotal)}</td>
                             <td className={`py-3 pr-3 font-bold ${!hasData ? 'text-slate-400' : gap >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{hasData ? `${gap >= 0 ? '+' : ''}${formatMillion(gap)}` : '—'}</td>
@@ -1927,7 +1928,7 @@ Math.abs(calculatedData.gap) < 200000
       {comparisonSbuId && (() => {
         const compareSbu = calculatedData.sbus.find(s => s.id === comparisonSbuId) || calculatedData.sbus[0];
         const h = historicalBySbu[compareSbu?.id] || {};
-        const floor = Number(h.annualizedTotalRevenue || h.totalRevenue8M ? Number(h.totalRevenue8M || 0) / Math.max(1, Number(h.months || 8)) * 12 : 0);
+        const floor = Number(h.annualizedTotalRevenue || h.totalRevenueYTD ? Number(h.totalRevenueYTD || 0) / Math.max(1, Number(h.months || 8)) * 12 : 0);
         const rows = [
           ['OPD Visit / day', Number(h.opdVisitsPerDay || 0), Number(compareSbu?.opdVisitsPerDay || 0), ' visit/day', 1],
           ['OPD Rev / Charge Visit', Number(h.opdRevenuePerVisit || 0), Number(compareSbu?.opdFactor || 0), ' บาท/visit', 0],
@@ -1944,8 +1945,8 @@ Math.abs(calculatedData.gap) < 200000
             <div className="space-y-4 p-5">
               <div className="flex flex-wrap gap-2">{calculatedData.sbus.map(sbu => <button key={sbu.id} onClick={() => setComparisonSbuId(sbu.id)} className={`rounded-full px-3 py-1.5 text-[11px] font-bold ${sbu.id === compareSbu?.id ? 'text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`} style={sbu.id === compareSbu?.id ? { backgroundColor: sbu.color } : undefined}>{sbu.name}</button>)}</div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div className="rounded-xl border border-slate-100 bg-slate-50 p-3"><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Historical Actual M8</p><p className="mt-1 text-lg font-black text-slate-800">{h.totalRevenue8M ? formatMillion(h.totalRevenue8M) : '—'}</p><p className="text-[10px] text-slate-400">Total Revenue</p></div>
-                <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><p className="text-[10px] font-bold uppercase tracking-wide text-emerald-600">Annualized Floor</p><p className="mt-1 text-lg font-black text-emerald-700">{floor ? formatMillion(floor) : '—'}</p><p className="text-[10px] text-emerald-600">Actual M8 ÷ months × 12</p></div>
+                <div className="rounded-xl border border-slate-100 bg-slate-50 p-3"><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Historical Actual YTD</p><p className="mt-1 text-lg font-black text-slate-800">{h.totalRevenueYTD ? formatMillion(h.totalRevenueYTD) : '—'}</p><p className="text-[10px] text-slate-400">Total Revenue</p></div>
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><p className="text-[10px] font-bold uppercase tracking-wide text-emerald-600">Annualized Floor</p><p className="mt-1 text-lg font-black text-emerald-700">{floor ? formatMillion(floor) : '—'}</p><p className="text-[10px] text-emerald-600">Actual YTD ÷ months × 12</p></div>
                 <div className={`rounded-xl border p-3 ${compareSbu?.targetTotal >= floor ? 'border-blue-100 bg-blue-50' : 'border-rose-100 bg-rose-50'}`}><p className="text-[10px] font-bold uppercase tracking-wide text-blue-600">Target 2027</p><p className="mt-1 text-lg font-black text-blue-700">{formatMillion(compareSbu?.targetTotal)}</p><p className={`text-[10px] font-bold ${compareSbu?.targetTotal >= floor ? 'text-emerald-600' : 'text-rose-600'}`}>{floor ? `${compareSbu.targetTotal >= floor ? '+' : ''}${formatMillion(compareSbu.targetTotal - floor)} vs floor` : 'No historical baseline'}</p></div>
               </div>
               <div className="overflow-hidden rounded-xl border border-slate-200"><div className="grid grid-cols-[1.5fr_1fr_1fr_.8fr] gap-3 bg-slate-50 px-4 py-3 text-[10px] font-bold uppercase tracking-wide text-slate-400"><span>Factor</span><span>Historical M8</span><span>Target 2027</span><span>Change</span></div>{rows.map(([label, actual, target, suffix, decimals]) => { const change = actual ? ((target - actual) / actual) * 100 : null; return <div key={label} className="grid grid-cols-[1.5fr_1fr_1fr_.8fr] items-center gap-3 border-t border-slate-100 px-4 py-3 text-xs"><span className="font-bold text-slate-700">{label}</span><span className="text-slate-600">{actual ? `${actual.toFixed(decimals)}${suffix}` : '—'}</span><span className="font-bold text-blue-700">{target ? `${target.toFixed(decimals)}${suffix}` : '—'}</span><span className={change === null ? 'text-slate-400' : change >= 0 ? 'font-bold text-emerald-600' : 'font-bold text-rose-600'}>{change === null ? '—' : `${change >= 0 ? '+' : ''}${change.toFixed(1)}%`}</span></div>; })}</div>
