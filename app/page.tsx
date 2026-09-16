@@ -256,6 +256,7 @@ export default function App() {
 
   const [editingFactors, setEditingFactors] = useState(null);
   const [comparisonSbuId, setComparisonSbuId] = useState(null);
+  const [factorReviewOpen, setFactorReviewOpen] = useState(false);
   const [syncStatus, setSyncStatus] = useState(null);
   const [syncMessage, setSyncMessage] = useState('');
   const [savedScenarios, setSavedScenarios] = useState([
@@ -512,6 +513,25 @@ export default function App() {
       return acc;
     }, {});
   }, [historicalYTD]);
+
+  const factorAlerts = useMemo(() => {
+    const definitions = [
+      ['OPD Visit / day', 'opdVisitsPerDay', 'opdVisitsPerDay', ' visit/day', 1],
+      ['OPD Rev / Charge Visit', 'opdRevenuePerVisit', 'opdFactor', ' บาท/visit', 0],
+      ['Admission / day', 'admissionsPerDay', 'admissionsPerDay', ' admission/day', 1],
+      ['ALOS', 'alos', 'alos', ' วัน', 1],
+      ['IPD Rev / Patient Day', 'ipdRevenuePerPatientDay', 'ipdFactor', ' บาท/pt-day', 0]
+    ];
+    return calculatedData.sbus.flatMap(sbu => {
+      const historical = historicalBySbu[sbu.id] || {};
+      return definitions.flatMap(([label, historicalKey, targetKey, suffix, decimals]) => {
+        const actual = Number(historical[historicalKey] || 0);
+        const target = Number(sbu[targetKey] || 0);
+        if (!actual || !target || target >= actual) return [];
+        return [{ sbu, label, actual, target, suffix, decimals, change: ((target - actual) / actual) * 100 }];
+      });
+    });
+  }, [calculatedData.sbus, historicalBySbu]);
 
   // ภาพรวมรายเดือน 12 เดือน
   const monthlyOverallData = useMemo(() => {
@@ -1163,13 +1183,20 @@ Math.abs(calculatedData.gap) < 200000
                     <p className="text-xs text-slate-400 mt-1">เป้าหมายปี 2027 ควรไม่ต่ำกว่า Run Rate จากข้อมูลจริงที่กรอกใน Historical_Actual_YTD</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setComparisonSbuId(calculatedData.sbus[0]?.id || null)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-[11px] font-bold text-blue-700 transition hover:bg-blue-100"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      ดู Factor Comparison
-                    </button>
+  <button
+  onClick={() => setComparisonSbuId(calculatedData.sbus[0]?.id || null)}
+  className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-[11px] font-bold text-blue-700 transition hover:bg-blue-100"
+  >
+  <Eye className="w-3.5 h-3.5" />
+  ดู Factor Comparison
+  </button>
+  <button
+  onClick={() => setFactorReviewOpen(true)}
+  className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-bold transition ${factorAlerts.length > 0 ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
+  >
+  <AlertTriangle className="w-3.5 h-3.5" />
+  Review Factor Alerts{factorAlerts.length > 0 ? ` · ${factorAlerts.length}` : ''}
+  </button>
                     <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-1 rounded">{historicalYTD.length} SBU loaded</span>
                   </div>
                 </div>
@@ -1923,6 +1950,46 @@ Math.abs(calculatedData.gap) < 200000
 
         </div>
       </main>
+
+      {/* Factor Review Center */}
+      {factorReviewOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setFactorReviewOpen(false)}>
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl border border-slate-200" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-100 bg-white px-5 py-4">
+              <div>
+                <div className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-rose-600" /><h3 className="text-base font-black text-slate-900">Factor Review Center</h3></div>
+                <p className="mt-1 text-xs text-slate-500">ตรวจเฉพาะ Factor ที่ Target 2027 ต่ำกว่า Historical YTD ก่อนบันทึก Scenario</p>
+              </div>
+              <button onClick={() => setFactorReviewOpen(false)} aria-label="ปิด Factor Review Center" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="space-y-4 p-5">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded-xl border border-slate-100 bg-slate-50 p-3"><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">SBU ทั้งหมด</p><p className="mt-1 text-xl font-black text-slate-800">{calculatedData.sbus.length}</p></div>
+                <div className="rounded-xl border border-rose-100 bg-rose-50 p-3"><p className="text-[10px] font-bold uppercase tracking-wide text-rose-600">ต้องตรวจสอบ</p><p className="mt-1 text-xl font-black text-rose-700">{factorAlerts.length}</p></div>
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><p className="text-[10px] font-bold uppercase tracking-wide text-emerald-600">ผ่าน</p><p className="mt-1 text-xl font-black text-emerald-700">{Math.max(0, calculatedData.sbus.length * 5 - factorAlerts.length)}</p></div>
+                <div className="rounded-xl border border-blue-100 bg-blue-50 p-3"><p className="text-[10px] font-bold uppercase tracking-wide text-blue-600">Historical</p><p className="mt-1 text-xl font-black text-blue-700">{historicalMonths ? `M${historicalMonths}` : 'YTD'}</p></div>
+              </div>
+              {factorAlerts.length === 0 ? (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-emerald-600" /><p className="mt-2 text-sm font-bold text-emerald-800">All factors meet or exceed historical baseline.</p><p className="mt-1 text-xs text-emerald-700">ไม่มี Factor ที่ต่ำกว่า Historical ใน Scenario ปัจจุบัน</p></div>
+              ) : (
+                <div className="overflow-hidden rounded-xl border border-slate-200">
+                  <div className="hidden grid-cols-[1.2fr_1.5fr_1fr_1fr_.8fr] gap-3 bg-slate-50 px-4 py-3 text-[10px] font-bold uppercase tracking-wide text-slate-400 sm:grid"><span>SBU</span><span>Factor</span><span>Historical</span><span>Target</span><span>Change</span></div>
+                  {factorAlerts.map(alert => (
+                    <div key={`${alert.sbu.id}-${alert.label}`} className="grid gap-3 border-t border-slate-100 px-4 py-3 first:border-t-0 sm:grid-cols-[1.2fr_1.5fr_1fr_1fr_.8fr] sm:items-center">
+                      <div><p className="text-xs font-bold text-slate-800">{alert.sbu.name}</p><p className="text-[10px] text-slate-400">{alert.sbu.id}</p></div>
+                      <div><p className="text-xs font-bold text-slate-700">{alert.label}</p><p className="text-[10px] text-rose-600">ต่ำกว่าฐาน ควรตรวจสอบ</p></div>
+                      <div><span className="text-[10px] text-slate-400 sm:hidden">Historical · </span><span className="text-xs text-slate-600">{alert.actual.toFixed(alert.decimals)}{alert.suffix}</span></div>
+                      <div><span className="text-[10px] text-slate-400 sm:hidden">Target · </span><span className="text-xs font-bold text-blue-700">{alert.target.toFixed(alert.decimals)}{alert.suffix}</span></div>
+                      <div className="font-bold text-rose-600">{alert.change.toFixed(1)}%</div>
+                      <div className="flex flex-wrap gap-2 sm:col-span-5"><button onClick={() => { setComparisonSbuId(alert.sbu.id); setFactorReviewOpen(false); }} className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[10px] font-bold text-blue-700 hover:bg-blue-100">ดู Comparison</button><button onClick={() => { setEditingFactors(alert.sbu); setFactorReviewOpen(false); }} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-slate-700 hover:bg-slate-50">แก้ Factor</button></div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* SBU Factor Comparison Modal */}
       {comparisonSbuId && (() => {
