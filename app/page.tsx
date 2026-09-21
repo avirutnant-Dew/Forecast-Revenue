@@ -252,9 +252,11 @@ export default function App() {
       targetTotal: s.defaultTarget2027
     }))
   );
+  const [hospitalFactors, setHospitalFactors] = useState({ opdFactor: 0, ipdFactor: 0 });
   const [historicalYTD, setHistoricalYTD] = useState([]);
 
   const [editingFactors, setEditingFactors] = useState(null);
+  const [editingHospitalFactors, setEditingHospitalFactors] = useState(null);
   const [comparisonSbuId, setComparisonSbuId] = useState(null);
   const [factorReviewOpen, setFactorReviewOpen] = useState(false);
   const [syncStatus, setSyncStatus] = useState(null);
@@ -364,7 +366,8 @@ export default function App() {
           selectedDeptId,
           hospitalTarget,
           activePreset,
-          sbuConfigs
+          sbuConfigs,
+          hospitalFactors
         }
       };
       const nextScenarios = [newScenario, ...savedScenarios];
@@ -388,6 +391,7 @@ export default function App() {
     setSelectedDeptId(snapshot.selectedDeptId || 'PED');
     setHospitalTarget(Number(snapshot.hospitalTarget) || 0);
     setActivePreset(snapshot.activePreset || 'custom');
+    setHospitalFactors(snapshot.hospitalFactors || { opdFactor: 0, ipdFactor: 0 });
     if (Array.isArray(snapshot.sbuConfigs) && snapshot.sbuConfigs.length) {
       setSbuConfigs(snapshot.sbuConfigs);
     }
@@ -521,6 +525,14 @@ export default function App() {
     const sumTargetOpd = sbus.reduce((acc, curr) => acc + curr.targetOpd, 0);
     const sumTargetIpd = sbus.reduce((acc, curr) => acc + curr.targetIpd, 0);
     const sumBase2026 = sbus.reduce((acc, curr) => acc + curr.base2026Total, 0);
+    const totalOpdVisits = sbus.reduce((acc, curr) => acc + (curr.opdFactor > 0 ? curr.targetOpd / curr.opdFactor : 0), 0);
+    const totalPatientDays = sbus.reduce((acc, curr) => acc + (curr.ipdFactor > 0 ? curr.targetIpd / curr.ipdFactor : 0), 0);
+    const derivedOpdFactor = totalOpdVisits > 0 ? sumTargetOpd / totalOpdVisits : 0;
+    const derivedIpdFactor = totalPatientDays > 0 ? sumTargetIpd / totalPatientDays : 0;
+    const totalOpdFactor = hospitalFactors.opdFactor > 0 ? hospitalFactors.opdFactor : derivedOpdFactor;
+    const totalIpdFactor = hospitalFactors.ipdFactor > 0 ? hospitalFactors.ipdFactor : derivedIpdFactor;
+    const totalAdmissions = sbus.reduce((acc, curr) => acc + (curr.ipdFactor > 0 && curr.alos > 0 ? curr.targetIpd / curr.ipdFactor / curr.alos : 0), 0);
+    const totalAlos = totalAdmissions > 0 ? totalPatientDays / totalAdmissions : 0;
     const overallGrowth = sumBase2026 > 0 ? ((sumTargetTotal - sumBase2026) / sumBase2026) * 100 : 0;
     // Keep the selected hospital target for balancing, but compare scenarios
     // against the official Base target so the gap visibly changes per scenario.
@@ -533,11 +545,18 @@ export default function App() {
       sumTargetOpd,
       sumTargetIpd,
       sumBase2026,
+      totalOpdFactor,
+      totalIpdFactor,
+      totalOpdVisits: totalOpdFactor > 0 ? sumTargetOpd / totalOpdFactor : 0,
+      totalOpdVisitsPerDay: totalOpdFactor > 0 ? sumTargetOpd / totalOpdFactor / 365 : 0,
+      totalPatientDays: totalIpdFactor > 0 ? sumTargetIpd / totalIpdFactor : 0,
+      totalAlos,
+      totalAdmissionsPerDay: totalIpdFactor > 0 && totalAlos > 0 ? (sumTargetIpd / totalIpdFactor) / totalAlos / 365 : 0,
       overallGrowth,
       hospitalGap,
       gap
     };
-  }, [sbuConfigs, hospitalTarget]);
+  }, [sbuConfigs, hospitalFactors, hospitalTarget]);
 
   const historicalMonths = historicalYTD[0]?.months || 0;
   const historicalBySbu = useMemo(() => {
@@ -956,12 +975,33 @@ Math.abs(calculatedData.gap) < 200000
               {/* Box 4: OPD / IPD Ratio 2027 */}
               <div className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200/80 flex flex-col justify-between">
                 <div>
-                  <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-1">
-                    TARGET OPD / IPD RATIO (2027)
+                  <div className="flex items-center justify-between text-xs text-slate-500 font-semibold uppercase tracking-wider mb-1">
+                    <span>TARGET OPD / IPD RATIO (2027)</span>
+                    <button
+                      type="button"
+                      onClick={() => setEditingHospitalFactors({ opdFactor: calculatedData.totalOpdFactor, ipdFactor: calculatedData.totalIpdFactor })}
+                      className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition"
+                      title="แก้ไข Factor รวมของโรงพยาบาล"
+                    >
+                      <Settings2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                   <div className="flex items-center justify-between text-xs font-bold text-slate-700 py-0.5 mt-1 font-sans">
                     <span className="text-blue-600">OPD: {formatMillion(calculatedData.sumTargetOpd)}</span>
                     <span className="text-amber-600">IPD: {formatMillion(calculatedData.sumTargetIpd)}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mt-2 text-[10px] font-semibold">
+                    <div className="rounded-md bg-blue-50 px-2 py-1.5 text-blue-700">
+                      <span className="block text-[9px] uppercase tracking-wide text-blue-500">OPD Factor รวม</span>
+                      <span className="block">฿{formatTHB(calculatedData.totalOpdFactor)} / visit</span>
+                      <span className="block mt-0.5 text-[9px] font-bold text-blue-600">Charged Visit / Day: {formatTHB(calculatedData.totalOpdVisitsPerDay)}</span>
+                    </div>
+                    <div className="rounded-md bg-amber-50 px-2 py-1.5 text-amber-700">
+                      <span className="block text-[9px] uppercase tracking-wide text-amber-500">IPD Factor รวม</span>
+                      <span className="block">฿{formatTHB(calculatedData.totalIpdFactor)} / pt-day</span>
+                      <span className="block mt-0.5 text-[9px] font-bold text-amber-600">ALOS: {calculatedData.totalAlos.toFixed(1)} วัน</span>
+                      <span className="block text-[9px] font-bold text-amber-600">Admission / Day: {calculatedData.totalAdmissionsPerDay.toFixed(1)}</span>
+                    </div>
                   </div>
                 </div>
                 <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden flex mt-2">
@@ -2069,6 +2109,81 @@ Math.abs(calculatedData.gap) < 200000
           </div>
         </div>;
       })()}
+
+      {/* Hospital Factor Customizer */}
+      {editingHospitalFactors && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4 font-sans">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-150">
+            <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Settings2 className="w-5 h-5 text-blue-600" />
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">ตั้งค่า Total Hospital Factors (2027)</h3>
+                  <p className="text-[10px] text-slate-500 mt-0.5">ใช้คำนวณ volume รวมของ OPD และ IPD ทั้งโรงพยาบาล</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditingHospitalFactors(null)}
+                className="p-1 rounded-lg text-slate-400 hover:bg-slate-100"
+                aria-label="ปิดการตั้งค่า Total Hospital Factors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div>
+                <label className="block font-bold text-blue-700 mb-1">Total OPD Rev / Charge Visit (บาท / ครั้ง)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={editingHospitalFactors.opdFactor}
+                  onChange={(e) => setEditingHospitalFactors({ ...editingHospitalFactors, opdFactor: Number(e.target.value) })}
+                  className="w-full px-3 py-2 border border-blue-200 rounded-lg font-bold text-slate-800 focus:outline-none focus:border-blue-600"
+                />
+                <p className="mt-1 text-[10px] text-slate-400">Required visits/year: {formatTHB(calculatedData.sumTargetOpd / (editingHospitalFactors.opdFactor || 1))} · Charged Visit / Day: {formatTHB(calculatedData.sumTargetOpd / (editingHospitalFactors.opdFactor || 1) / 365)}</p>
+              </div>
+
+              <div>
+                <label className="block font-bold text-amber-700 mb-1">Total IPD Rev / Patient Day (บาท / วันนอน)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={editingHospitalFactors.ipdFactor}
+                  onChange={(e) => setEditingHospitalFactors({ ...editingHospitalFactors, ipdFactor: Number(e.target.value) })}
+                  className="w-full px-3 py-2 border border-amber-200 rounded-lg font-bold text-slate-800 focus:outline-none focus:border-amber-500"
+                />
+                <p className="mt-1 text-[10px] text-slate-400">
+                  Required patient-days/year: {formatTHB(calculatedData.sumTargetIpd / (editingHospitalFactors.ipdFactor || 1))} ·
+                  ALOS: {calculatedData.totalAlos.toFixed(1)} วัน ·
+                  Admission / Day: {(calculatedData.sumTargetIpd / (editingHospitalFactors.ipdFactor || 1) / (calculatedData.totalAlos || 1) / 365).toFixed(1)}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
+              <button
+                onClick={() => setEditingHospitalFactors(null)}
+                className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold text-xs"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={() => {
+                  setHospitalFactors({
+                    opdFactor: Math.max(0, Number(editingHospitalFactors.opdFactor) || 0),
+                    ipdFactor: Math.max(0, Number(editingHospitalFactors.ipdFactor) || 0)
+                  });
+                  setEditingHospitalFactors(null);
+                }}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-xs shadow-xs transition"
+              >
+                บันทึกการเปลี่ยนแปลง
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Factor Customizer Modal */}
       {editingFactors && (
