@@ -238,9 +238,9 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
 // Google Apps Script Web App URL
-  const DEFAULT_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz1p27jyR-G0vsHYwpulF52BDVfr7730AqBa2Lrt3WNwHEQoExnutykpAeQ9eaY38Ud/exec';
-  const [scriptUrl, setScriptUrl] = useState(DEFAULT_SCRIPT_URL);
-  const [urlInputValue, setUrlInputValue] = useState(DEFAULT_SCRIPT_URL);
+  const DEFAULT_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzXvFoSmM7XL8Y3_pmxiVO-BONfrFT_heKW2h3MN2ABmjpBuBqhIkIJiOIv7Q9fiDsY/exec';
+  const [scriptUrl, setScriptUrl] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('revplanner_script_url') || DEFAULT_SCRIPT_URL : DEFAULT_SCRIPT_URL);
+  const [urlInputValue, setUrlInputValue] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('revplanner_script_url') || DEFAULT_SCRIPT_URL : DEFAULT_SCRIPT_URL);
 
   // Simulation Parameters
   const [hospitalTarget, setHospitalTarget] = useState(1054853709);
@@ -259,9 +259,14 @@ export default function App() {
   const [factorReviewOpen, setFactorReviewOpen] = useState(false);
   const [syncStatus, setSyncStatus] = useState(null);
   const [syncMessage, setSyncMessage] = useState('');
-  const [savedScenarios, setSavedScenarios] = useState([
-    { id: 1, name: '2027 Base Target (Official)', targetTotal: 1054853709, growth: 7.21, date: '2026-09-04 10:05' }
-  ]);
+  const [savedScenarios, setSavedScenarios] = useState(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      return JSON.parse(localStorage.getItem('revplanner_saved_scenarios') || '[]');
+    } catch {
+      return [];
+    }
+  });
 
   useEffect(() => {
     if (scriptUrl) {
@@ -300,7 +305,7 @@ export default function App() {
         if (data.scenarios && data.scenarios.base) {
           setHospitalTarget(data.scenarios.base.target);
         }
-        setHistoricalYTD(Array.isArray(data.historicalYTD) ? data.historicalYTD : []);
+        setHistoricalYTD(Array.isArray(data.historicalYTD) ? data.historicalYTD : (Array.isArray(data.historicalActual8M) ? data.historicalActual8M : []));
         setSyncStatus('success');
         setSyncMessage('เชื่อมต่อชีตสำเร็จ!');
         setTimeout(() => setSyncStatus(null), 3000);
@@ -353,9 +358,18 @@ export default function App() {
         name: `Plan 2027 (${activePreset.toUpperCase()}) - ${new Date().toLocaleTimeString('th-TH')}`,
         targetTotal: calculatedData.sumTargetTotal,
         growth: calculatedData.overallGrowth.toFixed(2),
-        date: new Date().toLocaleString('th-TH')
+        date: new Date().toLocaleString('th-TH'),
+        snapshot: {
+          activeTab,
+          selectedDeptId,
+          hospitalTarget,
+          activePreset,
+          sbuConfigs
+        }
       };
-      setSavedScenarios([newScenario, ...savedScenarios]);
+      const nextScenarios = [newScenario, ...savedScenarios];
+      setSavedScenarios(nextScenarios);
+      localStorage.setItem('revplanner_saved_scenarios', JSON.stringify(nextScenarios));
       setSyncStatus('success');
       setSyncMessage('บันทึก Scenario สำเร็จ!');
       setTimeout(() => setSyncStatus(null), 3000);
@@ -365,6 +379,27 @@ export default function App() {
       setSyncMessage('บันทึกไม่สำเร็จ');
       setTimeout(() => setSyncStatus(null), 3000);
     }
+  };
+
+  const handleLoadScenario = (scenario) => {
+    const snapshot = scenario?.snapshot;
+    if (!snapshot) return;
+    setActiveTab(snapshot.activeTab || 'overview');
+    setSelectedDeptId(snapshot.selectedDeptId || 'PED');
+    setHospitalTarget(Number(snapshot.hospitalTarget) || 0);
+    setActivePreset(snapshot.activePreset || 'custom');
+    if (Array.isArray(snapshot.sbuConfigs) && snapshot.sbuConfigs.length) {
+      setSbuConfigs(snapshot.sbuConfigs);
+    }
+    setSyncMessage(`โหลด Scenario ${scenario.name} สำเร็จ`);
+    setSyncStatus('success');
+    setTimeout(() => setSyncStatus(null), 3000);
+  };
+
+  const handleDeleteScenario = (scenarioId) => {
+    const nextScenarios = savedScenarios.filter(scenario => scenario.id !== scenarioId);
+    setSavedScenarios(nextScenarios);
+    localStorage.setItem('revplanner_saved_scenarios', JSON.stringify(nextScenarios));
   };
 
   const handleGrowthChange = (id, newGrowth) => {
@@ -1937,6 +1972,19 @@ Math.abs(calculatedData.gap) < 200000
                         <span className="font-bold text-xs text-emerald-700">
                           {formatTHB(sc.targetTotal)} บาท (+{sc.growth}%)
                         </span>
+                        <button
+                          onClick={() => handleLoadScenario(sc)}
+                          disabled={!sc.snapshot}
+                          className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 rounded text-[10px] font-bold disabled:opacity-40"
+                        >
+                          Load
+                        </button>
+                        <button
+                          onClick={() => handleDeleteScenario(sc.id)}
+                          className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded text-[10px] font-bold"
+                        >
+                          Delete
+                        </button>
                         <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-semibold">
                           Recorded
                         </span>
