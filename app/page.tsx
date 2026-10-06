@@ -31,7 +31,8 @@ const ACTUAL_REV_2026_MONTHLY = [
 ];
 
 const TOTAL_2026_FORECAST = 983954375; // 983.95M (Excel Row 56)
-const SEASONALITY_WEIGHTS_2026 = ACTUAL_REV_2026_MONTHLY.map(v => v / TOTAL_2026_FORECAST);
+const ACTUAL_2026_MONTHLY_TOTAL = ACTUAL_REV_2026_MONTHLY.reduce((sum, value) => sum + value, 0);
+const DEFAULT_SEASONALITY_WEIGHTS = ACTUAL_REV_2026_MONTHLY.map(value => value / ACTUAL_2026_MONTHLY_TOTAL);
 
 // ปรับค่าเริ่มต้นของ 11 SBU ให้รวมกันได้ 1,054,853,709 บาท พอดีเป๊ะ (+7.21%)
 const INITIAL_SBU_DATA_2027 = [
@@ -253,6 +254,9 @@ export default function App() {
     }))
   );
   const [hospitalFactors, setHospitalFactors] = useState({ opdFactor: 0, ipdFactor: 0 });
+  const [seasonalityWeights, setSeasonalityWeights] = useState(DEFAULT_SEASONALITY_WEIGHTS);
+  const [seasonalityDraft, setSeasonalityDraft] = useState(DEFAULT_SEASONALITY_WEIGHTS.map(weight => Number((weight * 100).toFixed(2))));
+  const [seasonalityMessage, setSeasonalityMessage] = useState('');
   const [historicalYTD, setHistoricalYTD] = useState([]);
 
   const [editingFactors, setEditingFactors] = useState(null);
@@ -367,7 +371,8 @@ export default function App() {
           hospitalTarget,
           activePreset,
           sbuConfigs,
-          hospitalFactors
+          hospitalFactors,
+          seasonalityWeights
         }
       };
       const nextScenarios = [newScenario, ...savedScenarios];
@@ -392,6 +397,11 @@ export default function App() {
     setHospitalTarget(Number(snapshot.hospitalTarget) || 0);
     setActivePreset(snapshot.activePreset || 'custom');
     setHospitalFactors(snapshot.hospitalFactors || { opdFactor: 0, ipdFactor: 0 });
+    const restoredSeasonality = Array.isArray(snapshot.seasonalityWeights) && snapshot.seasonalityWeights.length === 12
+      ? snapshot.seasonalityWeights
+      : DEFAULT_SEASONALITY_WEIGHTS;
+    setSeasonalityWeights(restoredSeasonality);
+    setSeasonalityDraft(restoredSeasonality.map(weight => Number((weight * 100).toFixed(2))));
     if (Array.isArray(snapshot.sbuConfigs) && snapshot.sbuConfigs.length) {
       setSbuConfigs(snapshot.sbuConfigs);
     }
@@ -404,6 +414,28 @@ export default function App() {
     const nextScenarios = savedScenarios.filter(scenario => scenario.id !== scenarioId);
     setSavedScenarios(nextScenarios);
     localStorage.setItem('revplanner_saved_scenarios', JSON.stringify(nextScenarios));
+  };
+
+  const applySeasonality = () => {
+    const total = seasonalityDraft.reduce((sum, value) => sum + (Number(value) || 0), 0);
+    const hasInvalidMonth = seasonalityDraft.some(value => !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100);
+    if (hasInvalidMonth || Math.round(total * 100) !== 10000) {
+      setSeasonalityMessage(hasInvalidMonth
+        ? 'แต่ละเดือนต้องมีค่าอยู่ระหว่าง 0% ถึง 100%'
+        : `ผลรวมต้องเท่ากับ 100% (ปัจจุบัน ${total.toFixed(2)}%)`);
+      return;
+    }
+    setSeasonalityWeights(seasonalityDraft.map(value => Number(value) / 100));
+    setSeasonalityMessage('นำ Seasonality ไปใช้กับเป้ารายเดือนแล้ว');
+  };
+
+  const resetSeasonalityTo2026 = () => {
+    const defaults = DEFAULT_SEASONALITY_WEIGHTS.map(weight => Number((weight * 100).toFixed(2)));
+    const roundingDifference = Number((100 - defaults.reduce((sum, value) => sum + value, 0)).toFixed(2));
+    defaults[defaults.length - 1] = Number((defaults[defaults.length - 1] + roundingDifference).toFixed(2));
+    setSeasonalityDraft(defaults);
+    setSeasonalityWeights(defaults.map(value => value / 100));
+    setSeasonalityMessage('คืนค่า Seasonality ตามสัดส่วนรายได้ปี 2026 แล้ว');
   };
 
   const handleGrowthChange = (id, newGrowth) => {
@@ -590,7 +622,7 @@ export default function App() {
   // ภาพรวมรายเดือน 12 เดือน
   const monthlyOverallData = useMemo(() => {
     return MONTH_SHORT.map((m, idx) => {
-      const weight = SEASONALITY_WEIGHTS_2026[idx];
+      const weight = seasonalityWeights[idx];
       const mRev2027 = calculatedData.sumTargetTotal * weight;
       const mOpd = calculatedData.sumTargetOpd * weight;
       const mIpd = calculatedData.sumTargetIpd * weight;
@@ -609,13 +641,13 @@ export default function App() {
         act2026M: mRev2026 / 1000000
       };
     });
-  }, [calculatedData]);
+  }, [calculatedData, seasonalityWeights]);
 
   // คำนวณเจาะลึก SBU ที่เลือกสำหรับกราฟ OPD แ��ะ IPD
   const selectedSbuDetail = useMemo(() => {
     const sbu = calculatedData.sbus.find(s => s.id === selectedDeptId) || calculatedData.sbus[0];
     const monthly = MONTH_SHORT.map((m, idx) => {
-      const weight = SEASONALITY_WEIGHTS_2026[idx];
+      const weight = seasonalityWeights[idx];
       const days = DAYS_IN_MONTH[idx];
       
       const mTotalRev = (sbu.targetTotal || 0) * weight;
@@ -641,7 +673,11 @@ export default function App() {
     });
 
     return { sbu, monthly };
-  }, [calculatedData, selectedDeptId]);
+  }, [calculatedData, selectedDeptId, seasonalityWeights]);
+
+  const seasonalityDraftTotal = seasonalityDraft.reduce((sum, value) => sum + (Number(value) || 0), 0);
+  const seasonalityIsValid = seasonalityDraft.every(value => Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 100)
+    && Math.round(seasonalityDraftTotal * 100) === 10000;
 
   return (
     <div className="flex h-screen bg-slate-100 text-slate-800 font-sans antialiased overflow-hidden">
@@ -1353,6 +1389,71 @@ Math.abs(calculatedData.gap) < 200000
                   </div>
                 </div>
               </div>
+
+              <section className="bg-white rounded-2xl p-5 shadow-xs border border-slate-200">
+                <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-sm">Revenue Seasonality 2027</h3>
+                    <p className="text-xs text-slate-500 mt-1">กำหนดสัดส่วนรายได้เป้าหมายแต่ละเดือน โดยไม่ต้องอิงรูปแบบปี 2026</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={resetSeasonalityTo2026}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" /> Reset 2026
+                    </button>
+                    <button
+                      type="button"
+                      onClick={applySeasonality}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700"
+                    >
+                      <Check className="w-3.5 h-3.5" /> Apply Weights
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3">
+                  {MONTH_NAMES.map((month, idx) => (
+                    <label key={month} className="block">
+                      <span className="mb-1 block text-[11px] font-semibold text-slate-500">{month}</span>
+                      <span className="relative block">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          value={seasonalityDraft[idx]}
+                          onChange={(event) => {
+                            const next = [...seasonalityDraft];
+                            next[idx] = event.target.value === '' ? 0 : Number(event.target.value);
+                            setSeasonalityDraft(next);
+                            setSeasonalityMessage('');
+                          }}
+                          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 pr-8 text-sm font-bold text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-none"
+                          aria-label={`${month} seasonality percentage`}
+                        />
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs">
+                  <span className={seasonalityIsValid ? 'font-bold text-emerald-700' : 'font-bold text-rose-600'}>
+                    Draft total: {seasonalityDraftTotal.toFixed(2)}% {seasonalityIsValid ? '· Ready to apply' : '· Must equal 100%'}
+                  </span>
+                  <span className="text-slate-500">
+                    Active total: {(seasonalityWeights.reduce((sum, weight) => sum + weight, 0) * 100).toFixed(2)}%
+                  </span>
+                  {seasonalityMessage && (
+                    <span className={seasonalityMessage.startsWith('นำ') || seasonalityMessage.startsWith('คืน') ? 'w-full text-emerald-700' : 'w-full text-rose-600'}>
+                      {seasonalityMessage}
+                    </span>
+                  )}
+                </div>
+              </section>
 
               <div className="bg-white rounded-2xl p-6 shadow-xs border border-slate-200">
                 <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
